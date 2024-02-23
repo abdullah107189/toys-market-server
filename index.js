@@ -1,5 +1,6 @@
 const express = require('express')
 const cors = require('cors')
+var jwt = require('jsonwebtoken');
 const app = express()
 const port = process.env.PORT || 5000
 require('dotenv').config()
@@ -29,7 +30,13 @@ async function run() {
         await client.connect();
         const toysCollection = client.db("Toys_Market_DB").collection("All_Toys");
 
-        // Send a ping to confirm a successful connection
+        // jwt 
+        app.post('/jwt', async (req, res) => {
+            const body = req.body;
+            const token = jwt.sign(body, process.env.ACCESS_TOKEN, { expiresIn: '1h' });
+            res.send({ token })
+        })
+
         app.post('/addToy', async (req, res) => {
             const body = req.body;
             const result = await toysCollection.insertOne(body);
@@ -48,12 +55,32 @@ async function run() {
         })
         app.get('/totalToys', async (req, res) => {
             const result = await toysCollection.estimatedDocumentCount()
-            res.send({result});
+            res.send({ result });
         })
 
-
+        // verify jwt 
+        const verifyJWT = (req, res, next) => {
+            const authorization = req.headers.authorization;
+            console.log(authorization)
+            if (!authorization) {
+                return res.status(401).send({ error: true, message: 'Unauthorized access' })
+            }
+            const token = authorization.split(' ')[1]
+            jwt.verify(token, process.env.ACCESS_TOKEN, (error, decoded) => {
+                if (error) {
+                    return res.status(401).send({ error: true, message: 'Unauthorized access' })
+                }
+                req.decoded = decoded
+                next();
+            })
+        }
         // my toys 
-        app.get('/allToys/:email', async (req, res) => {
+        app.get('/allToys/:email', verifyJWT, async (req, res) => {
+            const decoded = req.decoded;
+            if (decoded.email !== req.params.email) {
+                return res.status(403).send({ error: true, message: 'forbidden access' })
+            }
+            console.log(req.headers.authorization)
             const email = req.params.email;
             const quary = { user_email: email }
             const result = await toysCollection.find(quary).toArray()
